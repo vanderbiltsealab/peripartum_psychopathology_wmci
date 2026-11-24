@@ -1,0 +1,1459 @@
+---
+title: "Pre-post symptoms to WMCI - data analysis"
+author: "Julia Garon-Bissonnette"
+date: "2026-01-13"
+output: html_document
+---
+
+#Environment
+
+```{r}
+
+library(tidyr)
+library(dplyr)
+library(readr)
+library(tidyverse)
+library(psych)
+library(car)
+library(emmeans)
+library(ggplot2)
+library(tidyr)
+library(patchwork)
+library(lavaan)
+library(semhelpinghands)
+library(flextable)
+library(officer)
+library(purrr)
+library(tibble)
+
+
+sx_wmci_p <- "~/Downloads/Psychopathology_WMCI/preprocessed_data_deidentified_20260615.csv" #add path here
+
+```
+
+#Read in data
+
+```{r}
+
+sx_wmci <- read_csv(sx_wmci_p)
+
+```
+
+#Descriptive statistics
+
+```{r}
+
+#time (weeks) at pre WMCI
+sx_wmci %>%
+  summarise(
+    mean = mean(dem_gest_weeks, na.rm = TRUE),
+    sd   = sd(dem_gest_weeks, na.rm = TRUE)
+  )
+
+#time (months) at post WMCI 
+sx_wmci %>%
+  summarise(
+    mean = mean(dem_childage_months_session_6mo, na.rm = TRUE),
+    sd   = sd(dem_childage_months_session_6mo, na.rm = TRUE)
+  )
+
+#mom age
+sx_wmci %>%
+  summarise(
+    mean = mean(dem_mom_age_preg, na.rm = TRUE),
+    sd   = sd(dem_mom_age_preg, na.rm = TRUE),
+    min  = min(dem_mom_age_preg, na.rm = TRUE),
+    max  = max(dem_mom_age_preg, na.rm = TRUE)
+  )
+
+#income-to-needs
+sx_wmci %>%
+  summarise(
+    mean = mean(dem_incomeneeds_preg, na.rm = TRUE),
+    sd   = sd(dem_incomeneeds_preg, na.rm = TRUE),
+    min  = min(dem_incomeneeds_preg, na.rm = TRUE),
+    max  = max(dem_incomeneeds_preg, na.rm = TRUE)
+  )
+
+#primiparous
+sx_wmci <- sx_wmci %>%
+  mutate(
+    primiparous = case_when(
+      dem_childreninhome_preg == 0 ~ "Yes",
+      dem_childreninhome_preg >= 1 ~ "No",
+      is.na(dem_childreninhome_preg) ~ NA_character_
+    )
+  )
+
+sx_wmci %>%
+  dplyr::count(dem_childreninhome_preg) %>%
+  mutate(percent = 100 * n / sum(n))
+
+#marital status
+sx_wmci %>%
+  dplyr::count(dem_maritalstat_txt_preg) %>%
+  mutate(percent = 100 * n / sum(n))
+
+#education
+sx_wmci %>%
+  dplyr::count(dem_momedu_txt_preg) %>%
+  mutate(percent = 100 * n / sum(n))
+
+#race
+sx_wmci %>%
+  dplyr::count(dem_momrace_txt) %>%
+  mutate(percent = 100 * n / sum(n))
+
+#ethinicity
+sx_wmci %>%
+  dplyr::count(dem_momlatinx_txt_preg) %>%
+  mutate(percent = 100 * n / sum(n))
+
+#child sex
+sx_wmci %>%
+  dplyr::count(child_sex) %>%
+  mutate(percent = 100 * n / sum(n))
+
+```
+
+#Representations descriptives
+
+```{r}
+
+#prenatal
+sx_wmci %>%
+  dplyr::count(wmci_cat_pre) %>%
+  mutate(percent = 100 * n / sum(n))
+
+#postnatal
+sx_wmci %>%
+  dplyr::filter(!is.na(wmci_cat_6mo)) %>%
+  dplyr::count(wmci_cat_6mo) %>%
+  mutate(percent = 100 * n / sum(n))
+
+#change
+change_df <- sx_wmci %>%
+  dplyr::filter(!is.na(wmci_cat_pre), !is.na(wmci_cat_6mo))
+
+change_df %>%
+  dplyr::count(wmci_cat_pre, wmci_cat_6mo) %>%
+  group_by(wmci_cat_pre) %>%
+  mutate(percent_of_pre = 100 * n / sum(n)) %>%
+  ungroup()
+
+change_df %>%
+  dplyr::filter(wmci_cat_pre %in% c(2, 3)) %>%
+  dplyr::summarise(
+    n_total_preUn = n(),
+    n_to_balanced        = sum(wmci_cat_6mo == 1),
+    percent_to_balanced  = 100 * n_to_balanced / n_total_preUn
+  )
+
+change_df %>%
+  dplyr::filter(wmci_cat_pre == 1) %>%
+  dplyr::summarise(
+    n_total_preBal  = n(),
+    n_to_Unb       = sum(wmci_cat_6mo %in% c(2, 3)),
+    percent_to_Unb = 100 * n_to_Unb / n_total_preBal
+  )
+
+```
+
+#Evaluation of covariates
+
+```{r}
+
+#categories
+
+#prenatal
+mage <- 
+  lm(
+    dem_mom_age_preg ~ factor(wmci_cat_pre), 
+    data = sx_wmci
+  )
+
+Anova(mage)
+emmeans(mage, pairwise ~ wmci_cat_pre, adjust = "bonferroni") #disengaged younger
+
+gest <- 
+  lm(
+    dem_gest_weeks ~ factor(wmci_cat_pre), 
+    data = sx_wmci
+  )
+
+Anova(gest)
+
+medu <- 
+  lm(
+    dem_momedu_preg ~ factor(wmci_cat_pre), 
+    data = sx_wmci
+  )
+
+Anova(medu)
+emmeans(medu, pairwise ~ wmci_cat_pre, adjust = "bonferroni") #disengaged < 
+
+itn <- 
+  lm(
+    dem_incomeneeds_preg ~ factor(wmci_cat_pre), 
+    data = sx_wmci
+  )
+
+Anova(itn)
+emmeans(itn, pairwise ~ wmci_cat_pre, adjust = "bonferroni") #disengaged and distorted <
+
+race <- table(sx_wmci$wmci_cat_pre, sx_wmci$dem_momrace_txt)
+chisq.test(race)
+
+eth <- table(sx_wmci$wmci_cat_pre, sx_wmci$dem_momlatinx_txt_preg)
+chisq.test(eth)
+
+tab <- table(sx_wmci$wmci_cat_pre, sx_wmci$primiparous,
+             dnn = c("WMCI_pre", "Primiparous"))
+tab
+
+chisq.test(tab)
+round(prop.table(tab, margin = 2), 3)  # % of each category within primiparous / multiparous
+round(prop.table(tab, margin = 1), 3)  # % primiparous / multiparous within each category
+
+#postnatal
+mage <- 
+  lm(
+    dem_mom_age_preg ~ factor(wmci_cat_6mo), 
+    data = sx_wmci
+  )
+
+Anova(mage)
+
+age <- 
+  lm(
+    dem_childage_months_session_6mo ~ factor(wmci_cat_6mo), 
+    data = sx_wmci
+  )
+
+Anova(age)
+
+medu <- 
+  lm(
+    dem_momedu_preg ~ factor(wmci_cat_6mo), 
+    data = sx_wmci
+  )
+
+Anova(medu)
+emmeans(medu, pairwise ~ wmci_cat_6mo, adjust = "bonferroni") #none differ
+
+itn <- 
+  lm(
+    dem_incomeneeds_preg ~ factor(wmci_cat_6mo), 
+    data = sx_wmci
+  )
+
+Anova(itn)
+
+race <- table(sx_wmci$wmci_cat_6mo, sx_wmci$dem_momrace_txt)
+chisq.test(race)
+
+eth <- table(sx_wmci$wmci_cat_6mo, sx_wmci$dem_momlatinx_txt_preg)
+chisq.test(eth)
+
+tab <- table(sx_wmci$wmci_cat_6mo, sx_wmci$primiparous,
+             dnn = c("WMCI_pre", "Primiparous"))
+tab
+
+chisq.test(tab)
+round(prop.table(tab, margin = 2), 3)  # % of each category within primiparous / multiparous
+round(prop.table(tab, margin = 1), 3)  # % primiparous / multiparous within each category
+
+#dimensions
+
+#correlations pre
+
+vars <- c("factor1_pre", "factor2_pre", "factor3_pre", "cesd_sum_pre", "bai_sum_pre", "asrs_tot_pre", "dem_mom_age_preg", "dem_gest_weeks", "dem_momedu_preg", "dem_incomeneeds_preg", "dem_childreninhome_preg")
+          
+corr_res <- psych::corr.test(
+  sx_wmci[, vars],
+  use = "pairwise",
+  method = "pearson"
+)
+
+p_to_stars <- function(p) {
+  ifelse(p < .001, "***",
+         ifelse(p < .01, "**",
+                ifelse(p < .05, "*", "")))
+}
+
+stars <- matrix(
+  p_to_stars(corr_res$p),
+  nrow = nrow(corr_res$p),
+  dimnames = dimnames(corr_res$p)
+)
+
+corr_with_stars <- matrix(
+  paste0(round(corr_res$r, 2), stars),
+  nrow = nrow(corr_res$r),
+  dimnames = dimnames(corr_res$r)
+)
+corr_with_stars
+
+#correlations post
+vars <- c( "factor1_6mo", "factor2_6mo", "factor3_6mo", "cesd_sum_pre", "cesd_sum_post", "bai_sum_pre", "bai_sum_post", "asrs_tot_pre", "asrs_tot_post", "dem_mom_age_preg", "dem_momedu_preg", "dem_numcurrentchild_6mo", "dem_childage_months_session_6mo")
+          
+corr_res <- psych::corr.test(
+  sx_wmci[, vars],
+  use = "pairwise",
+  method = "pearson"
+)
+
+p_to_stars <- function(p) {
+  ifelse(p < .001, "***",
+         ifelse(p < .01, "**",
+                ifelse(p < .05, "*", "")))
+}
+
+stars <- matrix(
+  p_to_stars(corr_res$p),
+  nrow = nrow(corr_res$p),
+  dimnames = dimnames(corr_res$p)
+)
+
+corr_with_stars <- matrix(
+  paste0(round(corr_res$r, 2), stars),
+  nrow = nrow(corr_res$r),
+  dimnames = dimnames(corr_res$r)
+)
+corr_with_stars
+
+#categorical variables 
+race_anova1 <- 
+  lm(
+    factor1_6mo ~ dem_momrace_txt, 
+    data = sx_wmci
+  )
+
+Anova(race_anova1)
+
+race_anova2 <- 
+  lm(
+    factor2_6mo ~ dem_momrace_txt, 
+    data = sx_wmci
+  )
+
+Anova(race_anova2)
+
+race_anova3 <- 
+  lm(
+    factor3_6mo ~ dem_momrace_txt, 
+    data = sx_wmci
+  )
+
+Anova(race_anova3)
+
+eth_anova1 <- 
+  lm(
+    factor1_6mo ~ dem_momlatinx_txt_preg, 
+    data = sx_wmci
+  )
+
+Anova(eth_anova1)
+
+eth_anova2 <- 
+  lm(
+    factor2_6mo ~ dem_momlatinx_txt_preg, 
+    data = sx_wmci
+  )
+
+Anova(eth_anova2)
+
+eth_anova3 <- 
+  lm(
+    factor3_6mo ~ dem_momlatinx_txt_preg, 
+    data = sx_wmci
+  )
+
+Anova(eth_anova3)
+
+t.test(sx_wmci$factor1_6mo ~ sx_wmci$child_sex)
+t.test(sx_wmci$factor2_6mo ~ sx_wmci$child_sex)
+t.test(sx_wmci$factor3_6mo ~ sx_wmci$child_sex)
+
+```
+
+#Distribution of symptoms
+
+```{r}
+
+#color palette
+sxwmci_pal <- c("#E69F00", "#56B4E9")  
+
+#depression
+cesd_long <- sx_wmci %>%
+  pivot_longer(cols = c(cesd_sum_pre, cesd_sum_post), 
+               names_to = "timepoint", 
+               values_to = "cesd_score")
+
+cesd <- ggplot(cesd_long, aes(x = cesd_score, fill = timepoint)) +
+  geom_density(alpha = 0.5) +
+  geom_vline(xintercept = 20, color = "black", linetype = "longdash", size = 1) +  
+  scale_fill_manual(values = sxwmci_pal, labels = c("Prenatal", "Postnatal")) +
+  theme_minimal() +
+  theme(
+    axis.title.y = element_text(size = 18),
+    axis.title.x = element_text(size = 20),
+    axis.text.y = element_text(size = 16),
+    axis.text.x = element_text(size = 16),
+    legend.title = element_blank(), 
+    legend.text = element_text(size = 18),
+    legend.position = "none"
+  ) +
+  labs(
+    x = "Depressive symptoms",
+    y = "Density", 
+    fill = "Timepoint"
+  )
+
+#anxiety
+bai_long <- sx_wmci %>%
+  pivot_longer(cols = c(bai_sum_pre, bai_sum_post), 
+               names_to = "timepoint", 
+               values_to = "bai_sum")
+
+bai <- ggplot(bai_long, aes(x = bai_sum, fill = timepoint)) +
+  geom_density(alpha = 0.5) +
+  geom_vline(xintercept = 22, color = "black", linetype = "longdash", size = 1) +  
+  scale_fill_manual(values = sxwmci_pal, labels = c("Prenatal", "Postnatal")) +
+  theme_minimal() +
+  theme(
+    axis.title.y = element_text(size = 18),
+    axis.title.x = element_text(size = 20),
+    axis.text.y = element_text(size = 16),
+    axis.text.x = element_text(size = 16),
+    legend.title = element_blank(), 
+    legend.text = element_text(size = 18),
+    legend.position = "bottom"
+  ) +
+  labs(
+    x = "Anxiety symptoms",
+    y = "Density", 
+    fill = "Timepoint"
+  )
+
+#ADHD
+asrs_long <- sx_wmci %>%
+  pivot_longer(cols = c(asrs_tot_pre, asrs_tot_post), 
+               names_to = "timepoint", 
+               values_to = "asrs_tot")
+
+asrs <- ggplot(asrs_long, aes(x = asrs_tot, fill = timepoint)) +
+  geom_density(alpha = 0.5) +
+  geom_vline(xintercept = 38, color = "black", linetype = "longdash", size = 1) +  
+  scale_fill_manual(values = sxwmci_pal, labels = c("Prenatal", "Postnatal")) +
+  theme_minimal() +
+  theme(
+    axis.title.y = element_text(size = 18),
+    axis.title.x = element_text(size = 20),
+    axis.text.y = element_text(size = 16),
+    axis.text.x = element_text(size = 16),
+    legend.title = element_blank(), 
+    legend.text = element_text(size = 18),
+    legend.position = "bottom"
+  ) +
+  labs(
+    x = "ADHD symptoms",
+    y = "Density", 
+    fill = "Timepoint"
+  )
+
+#combine
+bai <- bai + theme(legend.position = "none")
+asrs <- asrs + theme(legend.position = "none")
+
+symptom_density <-
+  (cesd + bai + asrs) +
+  plot_layout(ncol = 3, guides = "collect") &
+  theme(legend.position = "bottom")
+
+#ggsave("symptom_density.png", plot = symptom_density, width = 15, height = 5, dpi = 300)
+
+```
+
+#n and % above cut off
+
+```{r}
+
+cesd_pre <- sx_wmci %>%
+  dplyr::mutate(score_category = if_else(cesd_sum_pre >= 20, "At or Above 20", "Below 20")) %>%
+  dplyr::group_by(score_category) %>%
+  dplyr::summarise(
+    N = n(),
+    percentage = (N / nrow(sx_wmci)) * 100
+  )
+
+cesd_pre
+
+cesd_post <- sx_wmci %>%
+  dplyr::filter(!is.na(cesd_sum_post)) %>%
+  dplyr::mutate(
+    score_category = if_else(cesd_sum_post >= 20,
+                             "At or Above 20",
+                             "Below 20")
+  ) %>%
+  dplyr::count(score_category) %>%   # cleaner than group_by + summarise
+  dplyr::mutate(
+    percentage = (n / sum(n)) * 100
+  )
+
+cesd_post
+
+bai_pre <- sx_wmci %>%
+  dplyr::mutate(score_category = if_else(bai_sum_pre >= 22, "At or Above 22", "Below 22")) %>%
+  dplyr::group_by(score_category) %>%
+  dplyr::summarise(
+    N = n(),
+    percentage = (N / nrow(sx_wmci)) * 100
+  )
+
+bai_pre
+
+bai_post <- sx_wmci %>%
+  dplyr::filter(!is.na(bai_sum_post)) %>%
+  dplyr::mutate(
+    score_category = if_else(bai_sum_post >= 22,
+                             "At or Above 22",
+                             "Below 22")
+  ) %>%
+  dplyr::count(score_category) %>%   # cleaner than group_by + summarise
+  dplyr::mutate(
+    percentage = (n / sum(n)) * 100
+  )
+bai_post
+
+asrs_pre <- sx_wmci %>%
+  dplyr::mutate(score_category = if_else(asrs_tot_pre >= 38, "At or Above 38", "Below 38")) %>%
+  dplyr::group_by(score_category) %>%
+  dplyr::summarise(
+    N = n(),
+    percentage = (N / nrow(sx_wmci)) * 100
+  )
+
+asrs_pre
+
+asrs_post <- sx_wmci %>%
+  dplyr::filter(!is.na(asrs_tot_post)) %>%
+  dplyr::mutate(
+    score_category = if_else(asrs_tot_post >= 38,
+                             "At or Above 38",
+                             "Below 38")
+  ) %>%
+  dplyr::count(score_category) %>%   # cleaner than group_by + summarise
+  dplyr::mutate(
+    percentage = (n / sum(n)) * 100
+  )
+
+asrs_post
+
+```
+
+#Missingness
+
+```{r}
+
+#count complete data
+variables <- c("factor1_pre", "factor2_pre", "factor3_pre", 
+               "factor1_6mo", "factor2_6mo", "factor3_6mo", 
+               "cesd_sum_pre", "bai_sum_pre", "asrs_tot_pre",
+               "cesd_sum_post", "bai_sum_post", "asrs_tot_post")
+
+complete_counts <- sapply(sx_wmci[, variables], function(x) sum(!is.na(x)))
+complete_counts
+
+#search for auxiliary variables 
+missingd <- c("factor1_6mo", "cesd_sum_post")
+demographics <- c("dem_mom_age_preg", "dem_momedu_preg", "dem_momrace", "dem_momlatinx_preg", "dem_incomeneeds_6mo")
+
+sx_wmci$complete_q <- ifelse(rowSums(is.na(sx_wmci[, missingd])) == 0,
+                             "Complete", "Missing")
+sx_wmci$complete_q <- factor(sx_wmci$complete_q, levels = c("Missing", "Complete"))
+
+
+#age
+t.test(dem_mom_age_preg ~ complete_q, data = sx_wmci)
+
+#education (cell sizes <5)
+table_edu <- table(sx_wmci$complete_q, sx_wmci$dem_momedu_txt_preg)
+chisq.test(table_edu)
+
+#race (cell sizes <5)
+table_race <- table(sx_wmci$complete_q, sx_wmci$dem_momrace_txt)
+chisq.test(table_race)
+
+#ethnicity (cell sizes <5)
+table_latinx <- table(sx_wmci$complete_q, sx_wmci$dem_momlatinx_txt_preg)
+chisq.test(table_latinx)
+
+#income to needs
+t.test(dem_incomeneeds_preg ~ complete_q, data = sx_wmci)
+
+```
+
+#CFA for pre and postnatal transdiagnostic psychopathology measure
+
+```{r}
+
+#prenatal
+mod_pre <- '
+  prenatalsx =~ cesd_sum_pre + bai_sum_pre + asrs_tot_pre
+  postnatalsx =~ cesd_sum_post + bai_sum_post + asrs_tot_post
+
+#correlated residuals
+  cesd_sum_post ~~ cesd_sum_pre
+  bai_sum_post ~~ bai_sum_pre
+  asrs_tot_post ~~ asrs_tot_pre
+  
+#associations between latents
+  prenatalsx ~~ postnatalsx
+  
+'
+fit_pre <- cfa(mod_pre, data = sx_wmci, estimator = "MLR", missing = "FIML")
+
+summary(fit_pre, standardized = TRUE, fit.measures = TRUE, ci = TRUE)
+standardizedSolution(fit_pre, ci = TRUE)
+
+```
+
+#Aim 1: Latent model categorical
+
+```{r}
+
+#dummy code representations
+sx_wmci$diseng_pre <- ifelse(sx_wmci$wmci_cat_pre == "2", 1, 0) 
+sx_wmci$distort_pre <- ifelse(sx_wmci$wmci_cat_pre == "3", 1, 0) 
+
+sx_wmci$diseng_6mo <- ifelse(sx_wmci$wmci_cat_6mo == "2", 1, 0) 
+sx_wmci$distort_6mo <- ifelse(sx_wmci$wmci_cat_6mo == "3", 1, 0) 
+
+#numerical parity
+sx_wmci <- sx_wmci %>%
+  mutate(parity = case_when(
+    primiparous == "No"  ~ 0,
+    primiparous == "Yes" ~ 1
+  ))
+
+mod_cat <- '
+  #latent variables
+  prenatalsx =~ cesd_sum_pre + bai_sum_pre + asrs_tot_pre
+  postnatalsx =~ cesd_sum_post + bai_sum_post + asrs_tot_post
+
+  #regressions prenatal
+  diseng_pre ~ a1*prenatalsx + dem_mom_age_preg + dem_momedu_preg + parity
+  distort_pre ~ a2*prenatalsx + dem_mom_age_preg + dem_momedu_preg
+
+  #regressions at 6 months
+  diseng_6mo ~ b1*diseng_pre + c1*prenatalsx + e1*postnatalsx 
+  distort_6mo ~ b2*distort_pre + c2*prenatalsx + e2*postnatalsx 
+  
+  #label this path
+  postnatalsx ~ d*prenatalsx
+
+  #covariates, symptoms associations
+  cesd_sum_pre ~ dem_momedu_preg
+  bai_sum_pre ~ dem_mom_age_preg + dem_momedu_preg
+  bai_sum_post ~ dem_mom_age_preg + dem_momedu_preg + bai_sum_pre
+  cesd_sum_post ~ cesd_sum_pre
+  bai_sum_post ~ bai_sum_pre
+  asrs_tot_post ~ asrs_tot_pre
+
+  #within-time residual covariances
+  diseng_pre ~~ distort_pre
+  diseng_6mo ~~ distort_6mo
+
+  #formation indirect effects (prenatal -> pre WM -> 6mo WM)
+  ind1 := a1 * b1
+  ind2 := a2 * b2
+
+  #continuity indirect effects (prenatal -> postnatal -> 6mo WM)
+  ind_post_f1 := d * e1
+  ind_post_f2 := d * e2
+'
+fit_cat <- sem(mod_cat, data = sx_wmci, estimator = "MLR", missing = "FIML", fixed.x = FALSE)
+summary(fit_cat, standardized = TRUE, fit.measures = TRUE, ci = TRUE)
+standardizedSolution(fit_cat, ci = TRUE)
+
+#run on bootstraps for indirect effects
+fit_cat_bt <- sem(mod_cat, data = sx_wmci, missing = "FIML", fixed.x = FALSE, se = "bootstrap", bootstrap = 5000)
+summary(fit_cat_bt, standardized = TRUE, ci = TRUE)
+standardizedSolution_boot_ci(fit_cat_bt, boot_ci_type = "bca.simple")
+
+```
+
+#Aim 1: Latent model continuous
+
+```{r}
+
+mod_cont <- '
+  #latent variables
+  prenatalsx =~ cesd_sum_pre + bai_sum_pre + asrs_tot_pre
+  postnatalsx =~ cesd_sum_post + bai_sum_post + asrs_tot_post
+
+  #regressions prenatal
+  factor1_pre ~ a1*prenatalsx + dem_momedu_preg + parity
+  factor2_pre ~ a2*prenatalsx + dem_momedu_preg + parity
+  factor3_pre ~ a3*prenatalsx
+
+  #regressions at 6 months
+  factor1_6mo ~ b1*factor1_pre + c1*prenatalsx + e1*postnatalsx + dem_mom_age_preg
+  factor2_6mo ~ b2*factor2_pre + c2*prenatalsx + e2*postnatalsx + dem_mom_age_preg + dem_momedu_preg
+  factor3_6mo ~ b3*factor3_pre + c3*prenatalsx + e3*postnatalsx + dem_mom_age_preg + dem_momedu_preg
+  
+  #label this path
+  postnatalsx ~ d*prenatalsx
+
+  #covariates, symptoms associations
+  cesd_sum_pre ~ dem_momedu_preg
+  bai_sum_pre ~ dem_mom_age_preg + dem_momedu_preg
+  bai_sum_post ~ dem_mom_age_preg + dem_momedu_preg + bai_sum_pre
+  cesd_sum_post ~ cesd_sum_pre
+  bai_sum_post ~ bai_sum_pre
+  asrs_tot_post ~ asrs_tot_pre
+
+  #within-time residual covariances
+  factor1_pre ~~ factor2_pre
+  factor1_pre ~~ factor3_pre
+  factor2_pre ~~ factor3_pre
+  factor1_6mo ~~ factor2_6mo
+  factor1_6mo ~~ factor3_6mo
+  factor2_6mo ~~ factor3_6mo
+
+  #formation indirect effects (prenatal -> pre WM -> 6mo WM)
+  ind1 := a1 * b1
+  ind2 := a2 * b2
+  ind3 := a3 * b3
+
+  #continuity indirect effects (prenatal -> postnatal -> 6mo WM)
+  ind_post_f1 := d * e1
+  ind_post_f2 := d * e2
+  ind_post_f3 := d * e3
+'
+fit_cont <- sem(mod_cont, data = sx_wmci, estimator = "MLR", missing = "FIML", fixed.x = FALSE)
+summary(fit_cont, standardized = TRUE, fit.measures = TRUE, ci = TRUE)
+standardizedSolution(fit_cont, ci = TRUE)
+
+#run on bootstraps for indirect effects
+fit_cont_bt <- sem(mod_cont, data = sx_wmci, missing = "FIML", fixed.x = FALSE, se = "bootstrap", bootstrap = 5000)
+summary(fit_cont_bt, standardized = TRUE, ci = TRUE)
+standardizedSolution_boot_ci(fit_cont_bt, boot_ci_type = "bca.simple")
+
+```
+
+#Aim 2: symptom-specific models 
+
+```{r}
+
+
+#depression, categorical
+mod_dep_cat <- '
+  diseng_6mo ~ cesd_sum_pre + cesd_sum_post + diseng_pre 
+  distort_6mo ~ cesd_sum_pre + cesd_sum_post + distort_pre 
+  
+  diseng_pre ~ cesd_sum_pre + dem_mom_age_preg + dem_momedu_preg + parity
+  distort_pre ~ cesd_sum_pre + dem_mom_age_preg + dem_momedu_preg
+  
+  cesd_sum_pre ~ dem_momedu_preg
+  cesd_sum_post ~ cesd_sum_pre
+
+  #within-time residual covariances
+  diseng_pre ~~ distort_pre
+  diseng_6mo ~~ distort_6mo
+  
+'
+fit_dep_cat <- sem(mod_dep_cat, data = sx_wmci, estimator = "MLR", missing = "FIML", fixed.x = FALSE)
+summary(fit_dep_cat, standardized = TRUE, fit.measures = TRUE, ci = TRUE)
+standardizedSolution(fit_dep_cat, ci = TRUE)
+
+#depression, continuous
+mod_dep_cont <- '
+  factor1_6mo ~ cesd_sum_pre + cesd_sum_post + factor1_pre + dem_mom_age_preg
+  factor2_6mo ~ cesd_sum_pre + cesd_sum_post + factor2_pre + dem_mom_age_preg + dem_momedu_preg
+  factor3_6mo ~ cesd_sum_pre + cesd_sum_post + factor3_pre + dem_mom_age_preg + dem_momedu_preg
+  
+  factor1_pre ~ cesd_sum_pre + dem_momedu_preg + parity
+  factor2_pre ~ cesd_sum_pre + dem_momedu_preg + parity
+  factor3_pre ~ cesd_sum_pre 
+  
+  cesd_sum_pre ~ dem_momedu_preg
+  cesd_sum_post ~ cesd_sum_pre
+
+  #within-time residual covariances
+  factor1_pre ~~ factor2_pre
+  factor1_pre ~~ factor3_pre
+  factor2_pre ~~ factor3_pre
+  
+  #within-time residual covariances
+  factor1_6mo ~~ factor2_6mo
+  factor1_6mo ~~ factor3_6mo
+  factor2_6mo ~~ factor3_6mo
+  
+'
+fit_dep_cont <- sem(mod_dep_cont, data = sx_wmci, estimator = "MLR", missing = "FIML", fixed.x = FALSE)
+summary(fit_dep_cont, standardized = TRUE, fit.measures = TRUE, ci = TRUE)
+standardizedSolution(fit_dep_cont, ci = TRUE)
+
+#anxiety, categorical
+mod_anx_cat <- '
+  diseng_6mo ~ bai_sum_pre + bai_sum_post + diseng_pre 
+  distort_6mo ~ bai_sum_pre + bai_sum_post + distort_pre
+  
+  diseng_pre ~ bai_sum_pre + dem_mom_age_preg + dem_momedu_preg + parity
+  distort_pre ~ bai_sum_pre + dem_mom_age_preg + dem_momedu_preg
+    
+  bai_sum_pre ~ dem_mom_age_preg + dem_momedu_preg
+  bai_sum_post ~ dem_mom_age_preg + dem_momedu_preg + bai_sum_pre
+
+  #within-time residual covariances
+  diseng_pre ~~ distort_pre
+  diseng_6mo ~~ distort_6mo
+  
+'
+fit_anx_cat <- sem(mod_anx_cat, data = sx_wmci, estimator = "MLR", missing = "FIML", fixed.x = FALSE)
+summary(fit_anx_cat, standardized = TRUE, fit.measures = TRUE, ci = TRUE)
+standardizedSolution(fit_anx_cat, ci = TRUE)
+
+#anxiety, continuous
+mod_anx_cont <- '
+  factor1_6mo ~ bai_sum_pre + bai_sum_post + factor1_pre + dem_mom_age_preg
+  factor2_6mo ~ bai_sum_pre + bai_sum_post + factor2_pre + dem_mom_age_preg + dem_momedu_preg
+  factor3_6mo ~ bai_sum_pre + bai_sum_post + factor3_pre + dem_mom_age_preg + dem_momedu_preg
+  
+  factor1_pre ~ bai_sum_pre + dem_momedu_preg + parity
+  factor2_pre ~ bai_sum_pre + dem_momedu_preg + parity
+  factor3_pre ~ bai_sum_pre 
+  
+  bai_sum_pre ~ dem_mom_age_preg + dem_momedu_preg
+  bai_sum_post ~ dem_mom_age_preg + dem_momedu_preg + bai_sum_pre
+ 
+  #within-time residual covariances
+  factor1_pre ~~ factor2_pre
+  factor1_pre ~~ factor3_pre
+  factor2_pre ~~ factor3_pre
+  
+  #within-time residual covariances
+  factor1_6mo ~~ factor2_6mo
+  factor1_6mo ~~ factor3_6mo
+  factor2_6mo ~~ factor3_6mo
+  
+'
+fit_anx_cont <- sem(mod_anx_cont, data = sx_wmci, estimator = "MLR", missing = "FIML", fixed.x = FALSE)
+summary(fit_anx_cont, standardized = TRUE, fit.measures = TRUE, ci = TRUE)
+standardizedSolution(fit_anx_cont, ci = TRUE)
+
+#adhd, categorical 
+mod_adhd_cat <- '
+
+  diseng_6mo ~ asrs_tot_pre + asrs_tot_post + diseng_pre 
+  distort_6mo ~ asrs_tot_pre + asrs_tot_post + distort_pre
+  
+  diseng_pre ~ asrs_tot_pre + dem_mom_age_preg + dem_momedu_preg + parity
+  distort_pre ~ asrs_tot_pre + dem_mom_age_preg + dem_momedu_preg
+  
+  asrs_tot_post ~ asrs_tot_pre
+
+  #within-time residual covariances
+  diseng_pre ~~ distort_pre
+  diseng_6mo ~~ distort_6mo
+  
+'
+fit_adhd_cat <- sem(mod_adhd_cat, data = sx_wmci, estimator = "MLR", missing = "FIML", fixed.x = FALSE)
+summary(fit_adhd_cat, standardized = TRUE, fit.measures = TRUE, ci = TRUE)
+standardizedSolution(fit_adhd_cat, ci = TRUE)
+
+#adhd, continuous
+mod_adhd_cont <- '
+  factor1_6mo ~ asrs_tot_pre + asrs_tot_post + factor1_pre + dem_mom_age_preg
+  factor2_6mo ~ asrs_tot_pre + asrs_tot_post + factor2_pre + dem_mom_age_preg + dem_momedu_preg
+  factor3_6mo ~ asrs_tot_pre + asrs_tot_post + factor3_pre + dem_mom_age_preg + dem_momedu_preg
+  
+  factor1_pre ~ asrs_tot_pre + dem_momedu_preg + parity
+  factor2_pre ~ asrs_tot_pre + dem_momedu_preg + parity
+  factor3_pre ~ asrs_tot_pre 
+  
+  asrs_tot_post ~ asrs_tot_pre
+ 
+  #within-time residual covariances
+  factor1_pre ~~ factor2_pre
+  factor1_pre ~~ factor3_pre
+  factor2_pre ~~ factor3_pre
+  
+  #within-time residual covariances
+  factor1_6mo ~~ factor2_6mo
+  factor1_6mo ~~ factor3_6mo
+  factor2_6mo ~~ factor3_6mo
+  
+  factor2_6mo ~~ factor2_pre
+  
+'
+fit_adhd_cont <- sem(mod_adhd_cont, data = sx_wmci, estimator = "MLR", missing = "FIML", fixed.x = FALSE)
+summary(fit_adhd_cont, standardized = TRUE, fit.measures = TRUE, ci = TRUE)
+standardizedSolution(fit_adhd_cont, ci = TRUE)
+
+```
+
+#looping and table function for publication ready tables 
+
+```{r}
+
+#labels (used by every table)
+var_labels <- c(
+  prenatalsx = "Prenatal psychopathology", postnatalsx = "Postnatal psychopathology",
+  cesd_sum_pre = "Prenatal CES-D", bai_sum_pre = "Prenatal BAI", asrs_tot_pre = "Prenatal ASRS",
+  cesd_sum_post = "Postnatal CES-D", bai_sum_post = "Postnatal BAI", asrs_tot_post = "Postnatal ASRS",
+  diseng_pre = "Prenatal disengaged", distort_pre = "Prenatal distorted",
+  diseng_6mo = "Postnatal disengaged", distort_6mo = "Postnatal distorted",
+  factor1_pre = "Prenatal positive engagement",
+  factor2_pre = "Prenatal relational coherence and support",
+  factor3_pre = "Prenatal caregiving frustration",
+  factor1_6mo = "Postnatal positive engagement",
+  factor2_6mo = "Postnatal relational coherence and support",
+  factor3_6mo = "Postnatal caregiving frustration",
+  dem_mom_age_preg = "Maternal age", dem_momedu_preg = "Maternal education",
+  parity = "Parity"
+)
+
+#dummy-coded outcomes get "(versus balanced)"
+dummy_vars <- c("diseng_pre", "distort_pre", "diseng_6mo", "distort_6mo")
+
+#row order in the tables
+outcome_order <- c("cesd_sum_pre", "bai_sum_pre", "asrs_tot_pre",
+                   "cesd_sum_post", "bai_sum_post", "asrs_tot_post",
+                   "diseng_pre", "distort_pre", "factor1_pre", "factor2_pre", "factor3_pre",
+                   "postnatalsx",
+                   "diseng_6mo", "distort_6mo", "factor1_6mo", "factor2_6mo", "factor3_6mo")
+
+predictor_order <- c("diseng_pre", "distort_pre", "factor1_pre", "factor2_pre", "factor3_pre",
+                     "cesd_sum_pre", "bai_sum_pre", "asrs_tot_pre", "prenatalsx",
+                     "cesd_sum_post", "bai_sum_post", "asrs_tot_post", "postnatalsx",
+                     "dem_mom_age_preg", "dem_momedu_preg", "parity")
+
+#indirect effect labels
+pp <- "Prenatal psychopathology \u2192 "
+
+ind_labels_cat <- c(
+  ind1 = paste0(pp, "Prenatal disengaged \u2192 Postnatal disengaged"),
+  ind2 = paste0(pp, "Prenatal distorted \u2192 Postnatal distorted"),
+  ind_post_f1 = paste0(pp, "Postnatal psychopathology \u2192 Postnatal disengaged"),
+  ind_post_f2 = paste0(pp, "Postnatal psychopathology \u2192 Postnatal distorted"))
+
+ind_labels_cont <- c(
+  ind1 = paste0(pp, "Prenatal positive engagement \u2192 Postnatal positive engagement"),
+  ind2 = paste0(pp, "Prenatal relational coherence and support \u2192 Postnatal relational coherence and support"),
+  ind3 = paste0(pp, "Prenatal caregiving frustration \u2192 Postnatal caregiving frustration"),
+  ind_post_f1 = paste0(pp, "Postnatal psychopathology \u2192 Postnatal positive engagement"),
+  ind_post_f2 = paste0(pp, "Postnatal psychopathology \u2192 Postnatal relational coherence and support"),
+  ind_post_f3 = paste0(pp, "Postnatal psychopathology \u2192 Postnatal caregiving frustration"))
+
+#number formatting
+minus <- function(x) gsub("-", "\u2212", x, fixed = TRUE)
+
+fmt_num <- function(x, d = 2) {
+  out <- sprintf(paste0("%.", d, "f"), x)
+  small <- !is.na(x) & x != 0 & abs(x) < 0.005
+  out[small] <- sprintf("%.3f", x[small])
+  tiny <- small & abs(as.numeric(out)) == 0
+  out[tiny] <- sprintf("%.4f", x[tiny])
+  minus(out)
+}
+
+fmt_p <- function(p) ifelse(p < .001, "<.001", sub("^0", "", sprintf("%.3f", p)))
+
+#shared table style (Arial 11, single spaced, APA-like borders)
+style_ft <- function(ft, ci_cols, n_cols) {
+  ft %>%
+    font(fontname = "Arial", part = "all") %>%
+    fontsize(size = 11, part = "all") %>%
+    line_spacing(space = 1, part = "all") %>%
+    padding(padding.top = 1, padding.bottom = 1, part = "all") %>%
+    align(j = 2:n_cols, align = "center", part = "all") %>%
+    align(j = 1, align = "left", part = "all") %>%
+    border_remove() %>%
+    hline_top(border = fp_border(width = 1), part = "header") %>%
+    hline(i = 1, j = ci_cols, border = fp_border(width = 0.5), part = "header") %>%
+    hline_bottom(border = fp_border(width = 1), part = "header") %>%
+    hline_bottom(border = fp_border(width = 1), part = "body")
+}
+
+#regression table: works on any fitted lavaan object
+make_reg_ft <- function(fit) {
+  
+  pe <- parameterEstimates(fit, ci = FALSE) %>%
+    filter(op == "~") %>%
+    select(lhs, rhs, B = est, SE = se, z, p = pvalue)
+  
+  ss <- standardizedSolution(fit, level = .95) %>%
+    filter(op == "~") %>%
+    select(lhs, rhs, beta = est.std, lo = ci.lower, hi = ci.upper)
+  
+  reg <- inner_join(pe, ss, by = c("lhs", "rhs")) %>%
+    distinct(lhs, rhs, .keep_all = TRUE)
+  
+  #stop with a clear message if a variable is missing from the dictionaries
+  unknown <- setdiff(c(reg$lhs, reg$rhs), names(var_labels))
+  if (length(unknown)) stop("Add to var_labels: ", paste(unknown, collapse = ", "))
+  if (length(setdiff(reg$lhs, outcome_order))) stop("Add to outcome_order: ", paste(setdiff(reg$lhs, outcome_order), collapse = ", "))
+  if (length(setdiff(reg$rhs, predictor_order))) stop("Add to predictor_order: ", paste(setdiff(reg$rhs, predictor_order), collapse = ", "))
+  
+  #one header row per outcome, followed by its predictors
+  rows <- map_dfr(outcome_order[outcome_order %in% reg$lhs], function(o) {
+    d <- reg %>% filter(lhs == o) %>% arrange(match(rhs, predictor_order))
+    hdr <- paste0(var_labels[[o]], if (o %in% dummy_vars) " (versus balanced)" else "")
+    bind_rows(
+      tibble(Label = hdr, B = "", SE = "", z = "", p = "", beta = "", lo = "", hi = "", is_header = TRUE),
+      tibble(Label = unname(var_labels[d$rhs]),
+             B = fmt_num(d$B), SE = fmt_num(d$SE), z = fmt_num(d$z), p = fmt_p(d$p),
+             beta = fmt_num(d$beta), lo = fmt_num(d$lo), hi = fmt_num(d$hi),
+             is_header = FALSE))
+  })
+  
+  ft <- flextable(select(rows, -is_header)) %>%
+    set_header_labels(Label = "Outcome / Predictor", B = "B", SE = "SE", z = "z",
+                      p = "p", beta = "\u03B2", lo = "Lower", hi = "Upper") %>%
+    add_header_row(values = c("", "95% CI around \u03B2"), colwidths = c(6, 2))
+  
+  #italic statistical symbols
+  for (v in c("B", "SE", "z", "p")) {
+    ft <- compose(ft, i = 2, j = v, part = "header", value = as_paragraph(as_i(v)))
+  }
+  
+  ft %>%
+    bold(i = which(rows$is_header), part = "body") %>%
+    padding(i = which(!rows$is_header), j = 1, padding.left = 14, part = "body") %>%
+    style_ft(ci_cols = 7:8, n_cols = 8) %>%
+    width(j = 1, width = 2.3) %>%
+    width(j = 2:8, width = 0.58)
+}
+
+#indirect effects table: bootstrap (BCa) CIs around the standardized estimate
+make_ind_ft <- function(fit_bt, ind_labels) {
+  
+  sb <- standardizedSolution_boot_ci(fit_bt, boot_ci_type = "bca.simple") %>%
+    filter(op == ":=") %>%
+    select(lhs, beta = est.std, lo = ci.lower, hi = ci.upper) %>%
+    filter(lhs %in% names(ind_labels)) %>%
+    arrange(match(lhs, names(ind_labels))) %>%
+    transmute(Path = unname(ind_labels[lhs]),
+              beta = fmt_num(beta), lo = fmt_num(lo), hi = fmt_num(hi))
+  
+  flextable(sb) %>%
+    set_header_labels(Path = "Indirect association", beta = "\u03B2", lo = "Lower", hi = "Upper") %>%
+    add_header_row(values = c("", "95% CI around \u03B2"), colwidths = c(2, 2)) %>%
+    style_ft(ci_cols = 3:4, n_cols = 4) %>%
+    width(j = 1, width = 4.6) %>%
+    width(j = 2:4, width = 0.6)
+}
+
+#one entry per table (edit table numbers and titles here)
+cat_note  <- "Disengaged and distorted representations are dummy coded (reference = balanced)."
+cont_note <- "Representation dimensions are sums of WMCI scales."
+
+specs <- list(
+  list(no = "S4", fit = fit_cat, note = cat_note,
+       title = "Categorical Model: Transdiagnostic Psychopathology and Mental Representations",
+       ind = list(bt = fit_cat_bt, labels = ind_labels_cat)),
+  list(no = "S5", fit = fit_cont, note = cont_note,
+       title = "Continuous Model: Transdiagnostic Psychopathology and Mental Representations",
+       ind = list(bt = fit_cont_bt, labels = ind_labels_cont)),
+  list(no = "S6", fit = fit_dep_cat, note = cat_note,
+       title = "Depressive Symptoms and Mental Representations (Categorical)"),
+  list(no = "S7", fit = fit_dep_cont, note = cont_note,
+       title = "Depressive Symptoms and Mental Representations (Continuous)"),
+  list(no = "S8", fit = fit_anx_cat, note = cat_note,
+       title = "Anxiety Symptoms and Mental Representations (Categorical)"),
+  list(no = "S9", fit = fit_anx_cont, note = cont_note,
+       title = "Anxiety Symptoms and Mental Representations (Continuous)"),
+  list(no = "S10", fit = fit_adhd_cat, note = cat_note,
+       title = "ADHD Symptoms and Mental Representations (Categorical)"),
+  list(no = "S11", fit = fit_adhd_cont, note = cont_note,
+       title = "ADHD Symptoms and Mental Representations (Continuous)")
+)
+
+#text style for titles and notes (Arial 11, single spaced)
+arial11 <- function(...) fp_text(font.family = "Arial", font.size = 11, ...)
+single  <- fp_par(line_spacing = 1)
+
+#loop over tables and export to Word
+doc <- read_docx()
+
+for (s in specs) {
+  
+  note <- paste0(" B = unstandardized coefficient; SE = robust standard error; ",
+                 "\u03B2 = standardized coefficient; CI = confidence interval around \u03B2. ",
+                 s$note, " N = ", lavInspect(s$fit, "nobs"), ".")
+  
+  doc <- doc %>%
+    body_add_fpar(fpar(ftext(paste("Table", s$no), arial11(bold = TRUE)), fp_p = single)) %>%
+    body_add_fpar(fpar(ftext(s$title, arial11(italic = TRUE)), fp_p = single)) %>%
+    body_add_flextable(make_reg_ft(s$fit)) %>%
+    body_add_fpar(fpar(ftext("Note.", arial11(italic = TRUE)), ftext(note, arial11()), fp_p = single))
+  
+  #indirect effects (main models only)
+  if (!is.null(s$ind)) {
+    doc <- doc %>%
+      body_add_par("", style = "Normal") %>%
+      body_add_fpar(fpar(ftext(paste("Table", s$no, "(continued): Indirect Associations"), arial11(bold = TRUE)), fp_p = single)) %>%
+      body_add_flextable(make_ind_ft(s$ind$bt, s$ind$labels)) %>%
+      body_add_fpar(fpar(ftext("Note.", arial11(italic = TRUE)),
+                         ftext(" Confidence intervals are bias-corrected and accelerated bootstrap intervals (5,000 resamples) around the standardized indirect effect.", arial11()),
+                         fp_p = single))
+  }
+  
+  doc <- body_add_break(doc)
+}
+
+print(doc, target = "supplementary_tables.docx")
+
+```
+
+#sensitivity analysis - all covariates on categorical model
+
+```{r}
+
+#numerical (dummy) child sex
+sx_wmci <- sx_wmci %>%
+  mutate(boy = case_when(
+    child_sex == "Female"  ~ 0,
+    child_sex == "Male" ~ 1
+  ))
+
+mod_cat_sens <- '
+  #latent variables
+  prenatalsx =~ cesd_sum_pre + bai_sum_pre + asrs_tot_pre
+  postnatalsx =~ cesd_sum_post + bai_sum_post + asrs_tot_post
+
+  #regressions prenatal
+  diseng_pre ~ a1*prenatalsx + dem_mom_age_preg + dem_gest_weeks + dem_momedu_preg + parity + dem_momlatinx_preg
+  distort_pre ~ a2*prenatalsx + dem_mom_age_preg + dem_gest_weeks + dem_momedu_preg + parity + dem_momlatinx_preg
+
+  #regressions at 6 months
+  diseng_6mo ~ b1*diseng_pre + c1*prenatalsx + e1*postnatalsx + dem_mom_age_preg + dem_momedu_preg + parity + dem_momlatinx_preg + boy + dem_childage_months_session_6mo
+  distort_6mo ~ b2*distort_pre + c2*prenatalsx + e2*postnatalsx + dem_mom_age_preg + dem_momedu_preg + parity + dem_momlatinx_preg + boy + dem_childage_months_session_6mo
+
+  #label this path
+  postnatalsx ~ d*prenatalsx
+
+  #covariates, symptoms associations
+  cesd_sum_pre ~ dem_momedu_preg
+  bai_sum_pre ~ dem_mom_age_preg + dem_momedu_preg
+  bai_sum_post ~ dem_mom_age_preg + dem_momedu_preg + bai_sum_pre
+  cesd_sum_post ~ cesd_sum_pre
+  bai_sum_post ~ bai_sum_pre
+  asrs_tot_post ~ asrs_tot_pre
+
+  #within-time residual covariances
+  diseng_pre ~~ distort_pre
+  diseng_6mo ~~ distort_6mo
+
+  #formation indirect effects (prenatal -> pre WM -> 6mo WM)
+  ind1 := a1 * b1
+  ind2 := a2 * b2
+
+  #continuity indirect effects (prenatal -> postnatal -> 6mo WM)
+  ind_post_f1 := d * e1
+  ind_post_f2 := d * e2
+'
+fit_cat_sens <- sem(mod_cat_sens, data = sx_wmci, estimator = "MLR", missing = "FIML", fixed.x = FALSE)
+summary(fit_cat_sens, standardized = TRUE, fit.measures = TRUE, ci = TRUE)
+standardizedSolution(fit_cat_sens, ci = TRUE)
+
+#run on bootstraps for indirect effects
+fit_cat_sens_bt <- sem(mod_cat_sens, data = sx_wmci, missing = "FIML", fixed.x = FALSE, se = "bootstrap", bootstrap = 5000)
+summary(fit_cat_sens_bt, standardized = TRUE, ci = TRUE)
+standardizedSolution_boot_ci(fit_cat_sens_bt, boot_ci_type = "bca.simple")
+
+```
+
+
+#sensitivity analysis - all covariates on continuous model
+
+```{r}
+
+mod_cont_sens <- '
+  #latent variables
+  prenatalsx =~ cesd_sum_pre + bai_sum_pre + asrs_tot_pre
+  postnatalsx =~ cesd_sum_post + bai_sum_post + asrs_tot_post
+
+  #regressions prenatal
+  factor1_pre ~ a1*prenatalsx + dem_mom_age_preg + dem_gest_weeks + dem_momedu_preg + parity + dem_momlatinx_preg
+  factor2_pre ~ a2*prenatalsx + dem_mom_age_preg + dem_gest_weeks + dem_momedu_preg + parity + dem_momlatinx_preg
+  factor3_pre ~ a3*prenatalsx + dem_mom_age_preg + dem_gest_weeks + dem_momedu_preg + parity + dem_momlatinx_preg
+
+  #regressions at 6 months
+  factor1_6mo ~ b1*factor1_pre + c1*prenatalsx + e1*postnatalsx + dem_mom_age_preg + dem_momedu_preg + parity + dem_momlatinx_preg + boy + dem_childage_months_session_6mo
+  factor2_6mo ~ b2*factor2_pre + c2*prenatalsx + e2*postnatalsx + dem_mom_age_preg + dem_momedu_preg + parity + dem_momlatinx_preg + boy + dem_childage_months_session_6mo
+  factor3_6mo ~ b3*factor3_pre + c3*prenatalsx + e3*postnatalsx + dem_mom_age_preg + dem_momedu_preg + parity + dem_momlatinx_preg + boy + dem_childage_months_session_6mo
+
+  #label this path
+  postnatalsx ~ d*prenatalsx
+
+  #covariates, symptoms associations
+  cesd_sum_pre ~ dem_momedu_preg
+  bai_sum_pre ~ dem_mom_age_preg + dem_momedu_preg
+  bai_sum_post ~ dem_mom_age_preg + dem_momedu_preg + bai_sum_pre
+  cesd_sum_post ~ cesd_sum_pre
+  bai_sum_post ~ bai_sum_pre
+  asrs_tot_post ~ asrs_tot_pre
+
+  #within-time residual covariances
+  factor1_pre ~~ factor2_pre
+  factor1_pre ~~ factor3_pre
+  factor2_pre ~~ factor3_pre
+  factor1_6mo ~~ factor2_6mo
+  factor1_6mo ~~ factor3_6mo
+  factor2_6mo ~~ factor3_6mo
+
+  #formation indirect effects (prenatal -> pre WM -> 6mo WM)
+  ind1 := a1 * b1
+  ind2 := a2 * b2
+  ind3 := a3 * b3
+
+  #continuity indirect effects (prenatal -> postnatal -> 6mo WM)
+  ind_post_f1 := d * e1
+  ind_post_f2 := d * e2
+  ind_post_f3 := d * e3
+'
+fit_cont_sens <- sem(mod_cont_sens, data = sx_wmci, estimator = "MLR", missing = "FIML", fixed.x = FALSE)
+summary(fit_cont_sens, standardized = TRUE, fit.measures = TRUE, ci = TRUE)
+standardizedSolution(fit_cont_sens, ci = TRUE)
+
+#run on bootstraps for indirect effects
+fit_cont_sens_bt <- sem(mod_cont_sens, data = sx_wmci, missing = "FIML", fixed.x = FALSE, se = "bootstrap", bootstrap = 5000)
+summary(fit_cont_sens_bt, standardized = TRUE, ci = TRUE)
+standardizedSolution_boot_ci(fit_cont_sens_bt, boot_ci_type = "bca.simple")
+
+```
+
+#looping and table function for publication ready sensitivity analyses tables 
+
+```{r}
+#labels (used by every table)
+var_labels <- c(
+  prenatalsx = "Prenatal psychopathology", postnatalsx = "Postnatal psychopathology",
+  cesd_sum_pre = "Prenatal CES-D", bai_sum_pre = "Prenatal BAI", asrs_tot_pre = "Prenatal ASRS",
+  cesd_sum_post = "Postnatal CES-D", bai_sum_post = "Postnatal BAI", asrs_tot_post = "Postnatal ASRS",
+  diseng_pre = "Prenatal disengaged", distort_pre = "Prenatal distorted",
+  diseng_6mo = "Postnatal disengaged", distort_6mo = "Postnatal distorted",
+  factor1_pre = "Prenatal positive engagement",
+  factor2_pre = "Prenatal relational coherence and support",
+  factor3_pre = "Prenatal caregiving frustration",
+  factor1_6mo = "Postnatal positive engagement",
+  factor2_6mo = "Postnatal relational coherence and support",
+  factor3_6mo = "Postnatal caregiving frustration",
+  dem_mom_age_preg = "Maternal age",
+  dem_gest_weeks = "Gestational weeks at prenatal WMCI",
+  dem_momedu_preg = "Maternal education",
+  parity = "Parity",
+  dem_momlatinx_preg = "Maternal ethnicity",
+  boy = "Infant sex (boy)",
+  dem_childage_months_session_6mo = "Infant age"
+)
+
+#dummy-coded outcomes get "(versus balanced)"
+dummy_vars <- c("diseng_pre", "distort_pre", "diseng_6mo", "distort_6mo")
+
+#row order in the tables
+outcome_order <- c("cesd_sum_pre", "bai_sum_pre", "asrs_tot_pre",
+                   "cesd_sum_post", "bai_sum_post", "asrs_tot_post",
+                   "diseng_pre", "distort_pre", "factor1_pre", "factor2_pre", "factor3_pre",
+                   "postnatalsx",
+                   "diseng_6mo", "distort_6mo", "factor1_6mo", "factor2_6mo", "factor3_6mo")
+
+predictor_order <- c("diseng_pre", "distort_pre", "factor1_pre", "factor2_pre", "factor3_pre",
+                     "cesd_sum_pre", "bai_sum_pre", "asrs_tot_pre", "prenatalsx",
+                     "cesd_sum_post", "bai_sum_post", "asrs_tot_post", "postnatalsx",
+                     "dem_mom_age_preg", "dem_gest_weeks", "dem_momedu_preg",
+                     "parity", "dem_momlatinx_preg", "boy",
+                     "dem_childage_months_session_6mo")
+
+#indirect effect labels
+pp <- "Prenatal psychopathology \u2192 "
+
+ind_labels_cat <- c(
+  ind1 = paste0(pp, "Prenatal disengaged \u2192 Postnatal disengaged"),
+  ind2 = paste0(pp, "Prenatal distorted \u2192 Postnatal distorted"),
+  ind_post_f1 = paste0(pp, "Postnatal psychopathology \u2192 Postnatal disengaged"),
+  ind_post_f2 = paste0(pp, "Postnatal psychopathology \u2192 Postnatal distorted"))
+
+ind_labels_cont <- c(
+  ind1 = paste0(pp, "Prenatal positive engagement \u2192 Postnatal positive engagement"),
+  ind2 = paste0(pp, "Prenatal relational coherence and support \u2192 Postnatal relational coherence and support"),
+  ind3 = paste0(pp, "Prenatal caregiving frustration \u2192 Postnatal caregiving frustration"),
+  ind_post_f1 = paste0(pp, "Postnatal psychopathology \u2192 Postnatal positive engagement"),
+  ind_post_f2 = paste0(pp, "Postnatal psychopathology \u2192 Postnatal relational coherence and support"),
+  ind_post_f3 = paste0(pp, "Postnatal psychopathology \u2192 Postnatal caregiving frustration"))
+
+#number formatting
+minus <- function(x) gsub("-", "\u2212", x, fixed = TRUE)
+
+fmt_num <- function(x, d = 2) {
+  out <- sprintf(paste0("%.", d, "f"), x)
+  small <- !is.na(x) & x != 0 & abs(x) < 0.005
+  out[small] <- sprintf("%.3f", x[small])
+  tiny <- small & abs(as.numeric(out)) == 0
+  out[tiny] <- sprintf("%.4f", x[tiny])
+  minus(out)
+}
+
+fmt_p <- function(p) ifelse(p < .001, "<.001", sub("^0", "", sprintf("%.3f", p)))
+
+#shared table style (Arial 11, single spaced, APA-like borders)
+style_ft <- function(ft, ci_cols, n_cols) {
+  ft %>%
+    font(fontname = "Arial", part = "all") %>%
+    fontsize(size = 11, part = "all") %>%
+    line_spacing(space = 1, part = "all") %>%
+    padding(padding.top = 1, padding.bottom = 1, part = "all") %>%
+    align(j = 2:n_cols, align = "center", part = "all") %>%
+    align(j = 1, align = "left", part = "all") %>%
+    border_remove() %>%
+    hline_top(border = fp_border(width = 1), part = "header") %>%
+    hline(i = 1, j = ci_cols, border = fp_border(width = 0.5), part = "header") %>%
+    hline_bottom(border = fp_border(width = 1), part = "header") %>%
+    hline_bottom(border = fp_border(width = 1), part = "body")
+}
+
+#regression table: works on any fitted lavaan object
+make_reg_ft <- function(fit) {
+
+  pe <- parameterEstimates(fit, ci = FALSE) %>%
+    filter(op == "~") %>%
+    select(lhs, rhs, B = est, SE = se, z, p = pvalue)
+
+  ss <- standardizedSolution(fit, level = .95) %>%
+    filter(op == "~") %>%
+    select(lhs, rhs, beta = est.std, lo = ci.lower, hi = ci.upper)
+
+  reg <- inner_join(pe, ss, by = c("lhs", "rhs")) %>%
+    distinct(lhs, rhs, .keep_all = TRUE)
+
+  unknown <- setdiff(c(reg$lhs, reg$rhs), names(var_labels))
+  if (length(unknown)) stop("Add to var_labels: ", paste(unknown, collapse = ", "))
+  if (length(setdiff(reg$lhs, outcome_order))) stop("Add to outcome_order: ", paste(setdiff(reg$lhs, outcome_order), collapse = ", "))
+  if (length(setdiff(reg$rhs, predictor_order))) stop("Add to predictor_order: ", paste(setdiff(reg$rhs, predictor_order), collapse = ", "))
+
+  rows <- map_dfr(outcome_order[outcome_order %in% reg$lhs], function(o) {
+    d <- reg %>% filter(lhs == o) %>% arrange(match(rhs, predictor_order))
+    hdr <- paste0(var_labels[[o]], if (o %in% dummy_vars) " (versus balanced)" else "")
+    bind_rows(
+      tibble(Label = hdr, B = "", SE = "", z = "", p = "", beta = "", lo = "", hi = "", is_header = TRUE),
+      tibble(Label = unname(var_labels[d$rhs]),
+             B = fmt_num(d$B), SE = fmt_num(d$SE), z = fmt_num(d$z), p = fmt_p(d$p),
+             beta = fmt_num(d$beta), lo = fmt_num(d$lo), hi = fmt_num(d$hi),
+             is_header = FALSE))
+  })
+
+  ft <- flextable(select(rows, -is_header)) %>%
+    set_header_labels(Label = "Outcome / Predictor", B = "B", SE = "SE", z = "z",
+                      p = "p", beta = "\u03B2", lo = "Lower", hi = "Upper") %>%
+    add_header_row(values = c("", "95% CI around \u03B2"), colwidths = c(6, 2))
+
+  for (v in c("B", "SE", "z", "p")) {
+    ft <- compose(ft, i = 2, j = v, part = "header", value = as_paragraph(as_i(v)))
+  }
+
+  ft %>%
+    bold(i = which(rows$is_header), part = "body") %>%
+    padding(i = which(!rows$is_header), j = 1, padding.left = 14, part = "body") %>%
+    style_ft(ci_cols = 7:8, n_cols = 8) %>%
+    width(j = 1, width = 2.3) %>%
+    width(j = 2:8, width = 0.58)
+}
+
+#indirect effects table: bootstrap (BCa) CIs around the standardized estimate
+make_ind_ft <- function(fit_bt, ind_labels) {
+
+  sb <- standardizedSolution_boot_ci(fit_bt, boot_ci_type = "bca.simple") %>%
+    filter(op == ":=") %>%
+    select(lhs, beta = est.std, lo = ci.lower, hi = ci.upper) %>%
+    filter(lhs %in% names(ind_labels)) %>%
+    arrange(match(lhs, names(ind_labels))) %>%
+    transmute(Path = unname(ind_labels[lhs]),
+              beta = fmt_num(beta), lo = fmt_num(lo), hi = fmt_num(hi))
+
+  flextable(sb) %>%
+    set_header_labels(Path = "Indirect association", beta = "\u03B2", lo = "Lower", hi = "Upper") %>%
+    add_header_row(values = c("", "95% CI around \u03B2"), colwidths = c(2, 2)) %>%
+    style_ft(ci_cols = 3:4, n_cols = 4) %>%
+    width(j = 1, width = 4.6) %>%
+    width(j = 2:4, width = 0.6)
+}
+
+#one entry per table
+cat_note <- "Disengaged and distorted representations are dummy coded (reference = balanced)."
+cont_note <- "Representation dimensions are sums of WMCI scales."
+
+specs <- list(
+  list(no = "S4", fit = fit_cat, note = cat_note,
+       title = "Categorical Model: Transdiagnostic Psychopathology and Mental Representations",
+       ind = list(bt = fit_cat_bt, labels = ind_labels_cat)),
+
+  list(no = "S5", fit = fit_cont, note = cont_note,
+       title = "Continuous Model: Transdiagnostic Psychopathology and Mental Representations",
+       ind = list(bt = fit_cont_bt, labels = ind_labels_cont)),
+
+  list(no = "S6", fit = fit_cat_sens, note = cat_note,
+       title = "Sensitivity Analysis: Categorical Model with Expanded Covariate Adjustment",
+       ind = list(bt = fit_cat_sens_bt, labels = ind_labels_cat)),
+
+  list(no = "S7", fit = fit_cont_sens, note = cont_note,
+       title = "Sensitivity Analysis: Continuous Model with Expanded Covariate Adjustment",
+       ind = list(bt = fit_cont_sens_bt, labels = ind_labels_cont)),
+
+  list(no = "S8", fit = fit_dep_cat, note = cat_note,
+       title = "Depressive Symptoms and Mental Representations (Categorical)"),
+
+  list(no = "S9", fit = fit_dep_cont, note = cont_note,
+       title = "Depressive Symptoms and Mental Representations (Continuous)"),
+
+  list(no = "S10", fit = fit_anx_cat, note = cat_note,
+       title = "Anxiety Symptoms and Mental Representations (Categorical)"),
+
+  list(no = "S11", fit = fit_anx_cont, note = cont_note,
+       title = "Anxiety Symptoms and Mental Representations (Continuous)"),
+
+  list(no = "S12", fit = fit_adhd_cat, note = cat_note,
+       title = "ADHD Symptoms and Mental Representations (Categorical)"),
+
+  list(no = "S13", fit = fit_adhd_cont, note = cont_note,
+       title = "ADHD Symptoms and Mental Representations (Continuous)")
+)
+
+#text style for titles and notes (Arial 11, single spaced)
+arial11 <- function(...) fp_text(font.family = "Arial", font.size = 11, ...)
+single <- fp_par(line_spacing = 1)
+
+#loop over tables and export to Word
+doc <- read_docx()
+
+for (s in specs) {
+
+  note <- paste0(" B = unstandardized coefficient; SE = standard error; ",
+                 "\u03B2 = standardized coefficient; CI = confidence interval around \u03B2. ",
+                 s$note, " N = ", lavInspect(s$fit, "nobs"), ".")
+
+  doc <- doc %>%
+    body_add_fpar(fpar(ftext(paste("Table", s$no), arial11(bold = TRUE)), fp_p = single)) %>%
+    body_add_fpar(fpar(ftext(s$title, arial11(italic = TRUE)), fp_p = single)) %>%
+    body_add_flextable(make_reg_ft(s$fit)) %>%
+    body_add_fpar(fpar(ftext("Note.", arial11(italic = TRUE)), ftext(note, arial11()), fp_p = single))
+
+  if (!is.null(s$ind)) {
+    doc <- doc %>%
+      body_add_par("", style = "Normal") %>%
+      body_add_fpar(fpar(ftext(paste("Table", s$no, "(continued): Indirect Associations"), arial11(bold = TRUE)), fp_p = single)) %>%
+      body_add_flextable(make_ind_ft(s$ind$bt, s$ind$labels)) %>%
+      body_add_fpar(fpar(ftext("Note.", arial11(italic = TRUE)),
+                         ftext(" Confidence intervals are bias-corrected and accelerated bootstrap intervals (5,000 resamples) around the standardized indirect effect.", arial11()),
+                         fp_p = single))
+  }
+
+  doc <- body_add_break(doc)
+}
+
+print(doc, target = "supplementary_tables_sens.docx")
+
+```
