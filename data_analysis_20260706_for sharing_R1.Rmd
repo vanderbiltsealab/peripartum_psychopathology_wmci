@@ -192,15 +192,6 @@ medu <-
 Anova(medu)
 emmeans(medu, pairwise ~ wmci_cat_pre, adjust = "bonferroni") #disengaged < 
 
-itn <- 
-  lm(
-    dem_incomeneeds_preg ~ factor(wmci_cat_pre), 
-    data = sx_wmci
-  )
-
-Anova(itn)
-emmeans(itn, pairwise ~ wmci_cat_pre, adjust = "bonferroni") #disengaged and distorted <
-
 race <- table(sx_wmci$wmci_cat_pre, sx_wmci$dem_momrace_txt)
 chisq.test(race)
 
@@ -241,14 +232,6 @@ medu <-
 Anova(medu)
 emmeans(medu, pairwise ~ wmci_cat_6mo, adjust = "bonferroni") #none differ
 
-itn <- 
-  lm(
-    dem_incomeneeds_preg ~ factor(wmci_cat_6mo), 
-    data = sx_wmci
-  )
-
-Anova(itn)
-
 race <- table(sx_wmci$wmci_cat_6mo, sx_wmci$dem_momrace_txt)
 chisq.test(race)
 
@@ -267,7 +250,7 @@ round(prop.table(tab, margin = 1), 3)  # % primiparous / multiparous within each
 
 #correlations pre
 
-vars <- c("factor1_pre", "factor2_pre", "factor3_pre", "cesd_sum_pre", "bai_sum_pre", "asrs_tot_pre", "dem_mom_age_preg", "dem_gest_weeks", "dem_momedu_preg", "dem_incomeneeds_preg", "dem_childreninhome_preg")
+vars <- c("factor1_pre", "factor2_pre", "factor3_pre", "cesd_sum_pre", "bai_sum_pre", "asrs_tot_pre", "dem_mom_age_preg", "dem_gest_weeks", "dem_momedu_preg", "dem_childreninhome_preg")
           
 corr_res <- psych::corr.test(
   sx_wmci[, vars],
